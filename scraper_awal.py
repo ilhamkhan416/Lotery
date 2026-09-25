@@ -3,53 +3,58 @@ import json
 import re
 from datetime import datetime, timedelta
 import requests
-from bs4 import BeautifulSoup
 
-# URL diperbarui untuk mengambil endpoint paito HK
-TARGET_URL = "https://warna.design/paito/hk"
+# Domain utama landing page
+TARGET_URL = "https://warna.design/"
 OUTPUT_FILE = "data/paito_master.json"
 CUTOFF_DATE = datetime(2026, 9, 1)
 START_DATE_ESTIMATE = datetime(2024, 1, 1)
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-    "Accept-Language": "id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7"
+    "Accept": "*/*",
+    "Referer": "https://warna.design/"
 }
 
-def fetch_paito_html(url):
-    print(f"[+] Membuka URL: {url} ...")
-    try:
-        response = requests.get(url, headers=HEADERS, timeout=15)
-        response.raise_for_status()
-        return response.text
-    except requests.RequestException as e:
-        print(f"[-] Gagal mengambil halaman web: {e}")
-        return None
-
-def parse_and_clean_draws(html_content):
-    soup = BeautifulSoup(html_content, 'html.parser')
+def fetch_data():
+    """
+    Mengambil data dari landing page warna.design.
+    Mencoba mengambil via endpoint API internal landing page terlebih dahulu.
+    """
+    print(f"[+] Membuka Landing Page: {TARGET_URL} ...")
+    session = requests.Session()
     
-    # 1. Coba ekstraksi dari tag table jika ada
+    # List kemungkinan endpoint API data paito HK yang dipakai landing page
+    api_endpoints = [
+        "https://warna.design/api/paito/hk",
+        "https://warna.design/api/hk",
+        "https://warna.design/data/hk.json",
+        TARGET_URL
+    ]
+    
     raw_draws = []
-    tables = soup.find_all('table')
-    for table in tables:
-        rows = table.find_all('tr')
-        for row in rows:
-            cols = row.find_all(['td', 'th'])
-            for col in cols:
-                text = col.get_text(strip=True)
-                digits = re.findall(r'\b\d{4}\b', text)
-                if digits:
-                    raw_draws.extend(digits)
-
-    # 2. Jika tabel tidak ketemu, sapu seluruh teks dokumen untuk mencari pola angka 4D
-    if not raw_draws:
-        print("[!] Tabel statis tidak ditemukan, beralih ke pemindaian teks penuh...")
-        text_content = soup.get_text()
-        raw_draws = re.findall(r'\b\d{4}\b', text_content)
-
-    print(f"[+] Total raw result 4D terekstraksi: {len(raw_draws)} angka.")
+    
+    for url in api_endpoints:
+        try:
+            res = session.get(url, headers=HEADERS, timeout=10)
+            if res.status_code == 200:
+                # Jika response berupa JSON API
+                try:
+                    data = res.json()
+                    text_data = json.dumps(data)
+                    found = re.findall(r'\b\d{4}\b', text_data)
+                    if len(found) > 50:
+                        print(f"[+] Berhasil mengambil data via API/JSON endpoint: {url}")
+                        return found
+                except Exception:
+                    # Jika response berupa HTML landing page biasa
+                    found = re.findall(r'\b\d{4}\b', res.text)
+                    if len(found) > len(raw_draws):
+                        raw_draws = found
+        except Exception as e:
+            continue
+            
+    print(f"[+] Total raw result 4D terekstraksi dari landing page: {len(raw_draws)} angka.")
     return raw_draws
 
 def process_and_assign_dates(raw_draws):
@@ -82,13 +87,9 @@ def save_to_json(data, filepath):
     print(f"[✔] Berhasil menyimpan {len(data)} baris data paito ke file: '{filepath}'")
 
 def run_scraper():
-    html = fetch_paito_html(TARGET_URL)
-    if not html:
-        return
-
-    raw_draws = parse_and_clean_draws(html)
+    raw_draws = fetch_data()
     if not raw_draws:
-        print("[-] Tidak ada data angka yang berhasil diekstraksi.")
+        print("[-] Tidak ada data angka yang berhasil diekstraksi dari landing page.")
         return
 
     processed_data = process_and_assign_dates(raw_draws)
