@@ -5,7 +5,8 @@ from datetime import datetime, timedelta
 import requests
 from bs4 import BeautifulSoup
 
-TARGET_URL = "https://warna.design/paito/hk"
+# URL diperbarui ke domain utama warna.design
+TARGET_URL = "https://warna.design/"
 OUTPUT_FILE = "data/paito_master.json"
 CUTOFF_DATE = datetime(2026, 9, 1)
 START_DATE_ESTIMATE = datetime(2024, 1, 1)
