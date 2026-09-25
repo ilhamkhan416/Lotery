@@ -2,59 +2,39 @@ import os
 import json
 import re
 from datetime import datetime, timedelta
-import requests
+from playwright.sync_api import sync_playwright
 
-# Domain utama landing page
 TARGET_URL = "https://warna.design/"
 OUTPUT_FILE = "data/paito_master.json"
 CUTOFF_DATE = datetime(2026, 9, 1)
 START_DATE_ESTIMATE = datetime(2024, 1, 1)
 
-HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Accept": "*/*",
-    "Referer": "https://warna.design/"
-}
-
-def fetch_data():
-    """
-    Mengambil data dari landing page warna.design.
-    Mencoba mengambil via endpoint API internal landing page terlebih dahulu.
-    """
-    print(f"[+] Membuka Landing Page: {TARGET_URL} ...")
-    session = requests.Session()
-    
-    # List kemungkinan endpoint API data paito HK yang dipakai landing page
-    api_endpoints = [
-        "https://warna.design/api/paito/hk",
-        "https://warna.design/api/hk",
-        "https://warna.design/data/hk.json",
-        TARGET_URL
-    ]
-    
+def scrape_with_playwright():
+    print(f"[+] Membuka browser Playwright untuk target: {TARGET_URL} ...")
     raw_draws = []
     
-    for url in api_endpoints:
+    with sync_playwright() as p:
+        # Jalankan browser Chromium secara headless
+        browser = p.chromium.launch(headless=True)
+        page = browser.new_page()
+        
         try:
-            res = session.get(url, headers=HEADERS, timeout=10)
-            if res.status_code == 200:
-                # Jika response berupa JSON API
-                try:
-                    data = res.json()
-                    text_data = json.dumps(data)
-                    found = re.findall(r'\b\d{4}\b', text_data)
-                    if len(found) > 50:
-                        print(f"[+] Berhasil mengambil data via API/JSON endpoint: {url}")
-                        return found
-                except Exception:
-                    # Jika response berupa HTML landing page biasa
-                    found = re.findall(r'\b\d{4}\b', res.text)
-                    if len(found) > len(raw_draws):
-                        raw_draws = found
-        except Exception as e:
-            continue
+            page.goto(TARGET_URL, wait_until="networkidle", timeout=60000)
+            # Beri jeda 5 detik agar seluruh script render tabel selesai
+            page.wait_for_timeout(5000)
             
-    print(f"[+] Total raw result 4D terekstraksi dari landing page: {len(raw_draws)} angka.")
+            # Ambil seluruh teks dari halaman yang sudah di-render JavaScript
+            content_text = page.inner_text("body")
+            
+            # Ekstraksi seluruh pola 4 digit angka
+            raw_draws = re.findall(r'\b\d{4}\b', content_text)
+            print(f"[+] Total raw result 4D berhasil ditarik: {len(raw_draws)} angka.")
+            
+        except Exception as e:
+            print(f"[-] Terjadi kesalahan saat render Playwright: {e}")
+        finally:
+            browser.close()
+            
     return raw_draws
 
 def process_and_assign_dates(raw_draws):
@@ -87,9 +67,9 @@ def save_to_json(data, filepath):
     print(f"[✔] Berhasil menyimpan {len(data)} baris data paito ke file: '{filepath}'")
 
 def run_scraper():
-    raw_draws = fetch_data()
+    raw_draws = scrape_with_playwright()
     if not raw_draws:
-        print("[-] Tidak ada data angka yang berhasil diekstraksi dari landing page.")
+        print("[-] Tidak ada data yang berhasil diekstraksi.")
         return
 
     processed_data = process_and_assign_dates(raw_draws)
