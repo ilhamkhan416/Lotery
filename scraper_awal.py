@@ -5,14 +5,15 @@ from datetime import datetime, timedelta
 import requests
 from bs4 import BeautifulSoup
 
-# URL diperbarui ke domain utama warna.design
-TARGET_URL = "https://warna.design/"
+# URL diperbarui untuk mengambil endpoint paito HK
+TARGET_URL = "https://warna.design/paito/hk"
 OUTPUT_FILE = "data/paito_master.json"
 CUTOFF_DATE = datetime(2026, 9, 1)
 START_DATE_ESTIMATE = datetime(2024, 1, 1)
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
     "Accept-Language": "id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7"
 }
 
@@ -28,20 +29,25 @@ def fetch_paito_html(url):
 
 def parse_and_clean_draws(html_content):
     soup = BeautifulSoup(html_content, 'html.parser')
-    table = soup.find('table')
-    if not table:
-        print("[-] Tabel paito tidak ditemukan dalam struktur HTML.")
-        return []
-
+    
+    # 1. Coba ekstraksi dari tag table jika ada
     raw_draws = []
-    rows = table.find_all('tr')
-    for row in rows:
-        cols = row.find_all(['td', 'th'])
-        for col in cols:
-            text = col.get_text(strip=True)
-            digits = re.findall(r'\b\d{4}\b', text)
-            if digits:
-                raw_draws.append(digits[0])
+    tables = soup.find_all('table')
+    for table in tables:
+        rows = table.find_all('tr')
+        for row in rows:
+            cols = row.find_all(['td', 'th'])
+            for col in cols:
+                text = col.get_text(strip=True)
+                digits = re.findall(r'\b\d{4}\b', text)
+                if digits:
+                    raw_draws.extend(digits)
+
+    # 2. Jika tabel tidak ketemu, sapu seluruh teks dokumen untuk mencari pola angka 4D
+    if not raw_draws:
+        print("[!] Tabel statis tidak ditemukan, beralih ke pemindaian teks penuh...")
+        text_content = soup.get_text()
+        raw_draws = re.findall(r'\b\d{4}\b', text_content)
 
     print(f"[+] Total raw result 4D terekstraksi: {len(raw_draws)} angka.")
     return raw_draws
